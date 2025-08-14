@@ -28,7 +28,7 @@ class Hotel(models.Model):
 
 class RoomType(models.Model):
     hotel = models.ForeignKey(Hotel, on_delete=models.CASCADE, related_name="room_types")
-    name = models.CharField(max_length=120)  # e.g., Standard Double
+    name = models.CharField(max_length=120)  
     capacity = models.PositiveIntegerField(default=2)
     base_price = models.DecimalField(max_digits=12, decimal_places=2)
     currency = models.CharField(max_length=3, default="USD")
