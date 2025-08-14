@@ -38,6 +38,8 @@ class TourPackage(models.Model):
     slug = models.SlugField(max_length=260, unique=True, blank=True)
     summary = models.CharField(max_length=255, blank=True)
     description = models.TextField(blank=True)
+    start_date = models.DateTimeField()
+    end_date = models.DateTimeField()
     duration_days = models.PositiveSmallIntegerField()
     base_price = models.DecimalField(max_digits=12, decimal_places=2)
     currency = models.CharField(max_length=3, default="USD")
