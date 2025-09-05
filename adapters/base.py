@@ -1,0 +1,53 @@
+from abc import ABC, abstractmethod
+from typing import Any, Dict, Optional, List
+
+class AdapterBase(ABC):
+    def __init__(self, config: Dict[str, Any] | None = None):
+        self.config = config or {}
+
+# ---------- Payments ----------
+class PaymentAdapter(AdapterBase):
+    def create_checkout(self, *, amount: str, currency: str, customer: Dict[str, str],
+                        metadata: Dict[str, Any], return_urls: Dict[str, str]) -> Dict[str, Any]: ...
+    def refund(self, *, txn_ref: str, amount: Optional[str] = None, reason: Optional[str] = None) -> Dict[str, Any]: ...
+    def verify_webhook(self, *, payload: bytes, headers: Dict[str, str]) -> bool: ...
+    def parse_webhook(self, *, payload: bytes, headers: Dict[str, str]) -> Dict[str, Any]: ...
+
+# ---------- Notifications ----------
+class SmsAdapter(AdapterBase):
+    @abstractmethod
+    def send_sms(self, *, to: str, message: str, sender_id: Optional[str] = None) -> Dict[str, Any]: ...
+
+class EmailAdapter(AdapterBase):
+    @abstractmethod
+    def send_email(self, *, to: List[str], subject: str, html: str, text: Optional[str] = None,
+                   from_email: Optional[str] = None, headers: Optional[Dict[str,str]] = None) -> Dict[str, Any]: ...
+
+class PushAdapter(AdapterBase):
+    @abstractmethod
+    def send_push(self, *, token: str, title: str, body: str, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]: ...
+
+# ---------- Flights ----------
+class FlightsAdapter(AdapterBase):
+   
+    @abstractmethod
+    def search(self, *, origin: str, destination: str, depart_date: str,
+               return_date: Optional[str] = None, adults: int = 1, cabin: str = "ECONOMY") -> Dict[str, Any]: ...
+    @abstractmethod
+    def price(self, *, offer_id: str) -> Dict[str, Any]: ...
+    @abstractmethod
+    def book(self, *, offer_id: str, passengers: List[Dict[str, Any]], contact: Dict[str, Any]) -> Dict[str, Any]: ...
+    @abstractmethod
+    def get_pnr(self, *, locator: str, last_name: str) -> Dict[str, Any]: ...
+
+# ---------- Maps ----------
+class MapsAdapter(AdapterBase):
+    @abstractmethod
+    def geocode(self, *, query: str) -> Dict[str, Any]: ...
+    @abstractmethod
+    def reverse_geocode(self, *, lat: float, lng: float) -> Dict[str, Any]: ...
+    @abstractmethod
+    def places(self, *, query: str, lat: Optional[float] = None, lng: Optional[float] = None) -> Dict[str, Any]: ...
+    @abstractmethod
+    def distance_matrix(self, *, origins: List[str], destinations: List[str], mode: str = "driving") -> Dict[str, Any]: ...
+    def static_map_url(self, *, lat: float, lng: float, zoom: int = 10, width: int = 600, height: int = 400) -> str: ...

@@ -13,8 +13,18 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 from pathlib import Path
 import os
 from dotenv import load_dotenv
+import dj_database_url
+import cloudinary
+import cloudinary.uploader
+from cloudinary.utils import cloudinary_url
+from datetime import timedelta
 
 load_dotenv()
+cloudinary.config( 
+    cloud_name = os.getenv('CLOUD_NAME'), 
+    api_key = os.getenv('CLOUDINARY_API_KEY'), 
+    api_secret = os.getenv('CLOUD_API_SECRET'), 
+)
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -27,7 +37,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DEBUG')
+DEBUG = bool(os.getenv('DEBUG'))
 
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS','*').split(',')
 
@@ -42,18 +52,26 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    'cloudinary',
+    'rest_framework.authtoken',
+      "drf_spectacular",
+    "drf_spectacular_sidecar",
+     "corsheaders",
     #My apps
     'users',
     'catalog',
     'inventory',
     'booking',
     'payments',
-    'reviews'
+    'reviews',
+    'django_filters'
     
 ]
 
 MIDDLEWARE = [
+     "corsheaders.middleware.CorsMiddleware",
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -63,7 +81,9 @@ MIDDLEWARE = [
 ]
 
 ROOT_URLCONF = 'globetrotter.urls'
-
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+]
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
@@ -86,15 +106,9 @@ WSGI_APPLICATION = 'globetrotter.wsgi.application'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.getenv('DB_NAME'),
-        'USER':os.getenv('DB_USER'),
-        'PASSWORD':os.getenv('DB_PASSWORD'),
-        'HOST':os.getenv('DB_HOST'),
-        'PORT':os.getenv('DB_PORT')
-    }
+    'default': dj_database_url.config(default=os.getenv('DJ_DATABASE_URL'))
 }
+
 
 
 # Password validation
@@ -132,9 +146,104 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = 'static/'
-
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 AUTH_USER_MODEL = "users.User"
+
+REST_FRAMEWORK = {
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+    ],
+}
+
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "ALGORITHM": "HS256",
+    "SIGNING_KEY": SECRET_KEY,
+    "AUTH_HEADER_TYPES": ("Bearer",),
+}
+
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "GlobeTrotter API",
+    "DESCRIPTION": "Backend API for flights, maps, payments, and notifications.",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+}
+"""
+REST_FRAMEWORK = {
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "PAGE_SIZE": int(os.getenv("PAGE_SIZE", 20)),
+    "DEFAULT_FILTER_BACKENDS": [
+        "django_filters.rest_framework.DjangoFilterBackend",
+        "rest_framework.filters.SearchFilter",
+        "rest_framework.filters.OrderingFilter",
+    ],
+}
+"""
+
+ADAPTERS_CONFIG = {
+    # payments
+    "payments.stripe": {
+        "api_key": os.getenv("STRIPE_API_KEY"),
+        "webhook_secret": os.getenv("STRIPE_WEBHOOK_SECRET"),
+    },
+    "payments.mpesa": {
+        "consumer_key": os.getenv("MPESA_CONSUMER_KEY"),
+        "consumer_secret": os.getenv("MPESA_CONSUMER_SECRET"),
+        "shortcode": os.getenv("MPESA_SHORTCODE"),
+        "passkey": os.getenv("MPESA_PASSKEY"),
+        "callback_url": os.getenv("MPESA_CALLBACK_URL"),
+    },
+    "payments.flutterwave": {
+        "secret_key": os.getenv("FLW_SECRET_KEY"),
+        "webhook_secret": os.getenv("FLW_WEBHOOK_SECRET"),
+    },
+
+    # notifications
+     "notifications.twilio": {
+        "account_sid": os.getenv("TWILIO_ACCOUNT_SID"),
+        "auth_token": os.getenv("TWILIO_AUTH_TOKEN"),
+        "from_number": os.getenv("TWILIO_FROM_NUMBER"),
+    },
+    "notifications.sendgrid": {
+        "api_key": os.getenv("SENDGRID_API_KEY"),
+        "from_email": os.getenv("SENDGRID_FROM_EMAIL"),
+    },
+    "notifications.fcm": {
+        "service_account_json": os.getenv("FCM_SERVICE_ACCOUNT_JSON_PATH"),
+    },
+
+    # flights
+    "flights.amadeus": {
+        "client_id": os.getenv("AMADEUS_CLIENT_ID"),
+        "client_secret": os.getenv("AMADEUS_CLIENT_SECRET"),
+        "environment": os.getenv("AMADEUS_ENV","test"),
+        "token_ttl_seconds": 300,  # test/prod
+    },
+    "flights.duffel": {
+        "access_token": os.getenv("DUFFEL_ACCESS_TOKEN"),
+         "base_url": os.getenv("DUFFEL_BASE_URL", "https://api.duffel.com"),
+    },
+
+    # maps
+    "maps.google": {
+        "api_key": os.getenv("GOOGLE_MAPS_KEY"),
+    },
+    "maps.mapbox": {
+        "access_token": os.getenv("MAPBOX_ACCESS_TOKEN"),
+        "style": os.getenv("MAPBOX_STYLE", "streets-v11"),
+    },
+}

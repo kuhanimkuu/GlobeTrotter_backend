@@ -23,7 +23,7 @@ class User(AbstractUser):
         return self.role == self.Role.CUSTOMER
     
     def is_organizer(self):
-        return self.role == self.Role.ORGANIZER
+        return self.role == self.Role.AGENT
     
     def is_admin(self): 
         return self.role == self.Role.ADMIN

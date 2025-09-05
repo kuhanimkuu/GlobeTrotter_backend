@@ -27,11 +27,19 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ("id", "username", "email", "password", "password2", "first_name", "last_name", "phone", "company")
+        fields = (
+            "id", "username", "email", "password", "password2",
+            "first_name", "last_name", "phone", "company", "role"
+        )
 
     def validate(self, attrs):
         if attrs.get("password") != attrs.get("password2"):
             raise serializers.ValidationError({"password": "Passwords must match."})
+
+        # ✅ restrict role to CUSTOMER or AGENT
+        if attrs.get("role") not in ["CUSTOMER", "AGENT"]:
+            raise serializers.ValidationError({"role": "Invalid role. Choose CUSTOMER or AGENT."})
+
         return attrs
 
     def create(self, validated_data):
@@ -41,7 +49,6 @@ class RegisterSerializer(serializers.ModelSerializer):
         user.set_password(password)
         user.save()
         return user
-
 
 class UserDetailSerializer(serializers.ModelSerializer):
     avatar_url = serializers.SerializerMethodField()

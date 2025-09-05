@@ -33,7 +33,7 @@ class RoomType(models.Model):
     base_price = models.DecimalField(max_digits=12, decimal_places=2)
     currency = models.CharField(max_length=3, default="USD")
     quantity = models.PositiveIntegerField(default=1, help_text="Number of available rooms of this type")
-
+    availability = models.PositiveBigIntegerField(default=1,help_text='Number of currently available rooms of this type')
     image = CloudinaryField("image",
         folder="globetrotter/rooms",
         resource_type="image",
@@ -50,6 +50,11 @@ class RoomType(models.Model):
         return f"{self.hotel.name} — {self.name}"
 
 class Car(models.Model):
+    destination = models.ForeignKey(
+        "catalog.Destination",
+        on_delete=models.CASCADE,
+        related_name="cars"
+    )
     provider = models.CharField(max_length=120, blank=True)
     make = models.CharField(max_length=80)
     model = models.CharField(max_length=80)
@@ -67,7 +72,7 @@ class Car(models.Model):
         blank=True,
         null=True,
     )
-
+    
     def __str__(self): 
         return f"{self.make} {self.model} ({self.category})"
 
