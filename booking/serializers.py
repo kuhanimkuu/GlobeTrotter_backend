@@ -6,7 +6,7 @@ from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 from catalog.models import TourPackage  
 from django.contrib.auth import get_user_model
-
+from adapters.flights import ADAPTERS
 User = get_user_model()
 
 
@@ -244,22 +244,32 @@ class BookingCreateSerializer(serializers.Serializer):
         return BookingReadSerializer(instance, context=self.context).data
 
 
-class ExternalFlightBookingSerializer(serializers.Serializer):
-    provider = serializers.ChoiceField(choices=['amadeus', 'duffel'])
-    offer_id = serializers.CharField()
-    passengers = serializers.ListField(
-        child=serializers.DictField(),
-        min_length=1
+from rest_framework import serializers
+from rest_framework import serializers
+
+class PassengerSerializer(serializers.Serializer):
+    first_name = serializers.CharField()
+    last_name = serializers.CharField()
+    email = serializers.EmailField(required=False, allow_blank=True)
+    dob = serializers.DateField(required=False)       # optional: date of birth
+    gender = serializers.ChoiceField(
+        choices=["M", "F", "X"], required=False       # expand if needed
     )
-    currency = serializers.CharField(default="USD")
+    phone = serializers.CharField(required=False, allow_blank=True)
+
+    def validate(self, data):
+        # Example: if email is provided, ensure it's not empty
+        if "email" in data and not data["email"].strip():
+            raise serializers.ValidationError("Passenger email must not be empty if provided")
+        return data
+
+class ExternalFlightBookingSerializer(serializers.Serializer):
+    provider = serializers.ChoiceField(choices=list(ADAPTERS.keys()))
+    offer_id = serializers.CharField()
+    passengers = PassengerSerializer(many=True, min_length=1)
+    currency = serializers.CharField(default="USD", required=False)
     note = serializers.CharField(required=False, allow_blank=True)
     payment_token = serializers.CharField(required=False)
-
-    def validate_passengers(self, value):
-        for passenger in value:
-            if not passenger.get('first_name') or not passenger.get('last_name'):
-                raise ValidationError("Each passenger must have first_name and last_name")
-        return value
 
 
 class HotelBookingSerializer(serializers.Serializer):

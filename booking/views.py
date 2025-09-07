@@ -160,6 +160,9 @@ class BookingViewSet(
             status=status.HTTP_200_OK
         )
 
+
+    logger = logging.getLogger(__name__)
+
     @action(detail=False, methods=['post'])
     def flight(self, request):
         """
@@ -169,55 +172,89 @@ class BookingViewSet(
         serializer.is_valid(raise_exception=True)
         validated_data = serializer.validated_data
 
-        provider = validated_data.get('provider')
-        offer_id = validated_data.get('offer_id')
-        passengers = validated_data.get('passengers', [])
-        currency = validated_data.get('currency', 'USD')
-        note = validated_data.get('note', '')
-        payment_token = validated_data.get('payment_token')
-
+        provider = validated_data["provider"]
+        offer_id = validated_data["offer_id"]
+        passengers = validated_data["passengers"]
+        currency = validated_data.get("currency", "USD")
         try:
-            # Import the appropriate flight adapter
             from adapters.flights import get_flight_adapter
-            
-            # Get the adapter for the specified provider
             flight_adapter = get_flight_adapter(provider)
-            
-            # Create the flight booking through the adapter
-            booking_result = flight_adapter.create_booking(
-                user=request.user,
+
+            booking_result = flight_adapter.book(
                 offer_id=offer_id,
                 passengers=passengers,
-                currency=currency,
-                note=note,
-                payment_token=payment_token
+                contact={
+                    "emailAddress": request.user.email if request.user and request.user.email else "test@example.com",
+                    "phones": [
+                        {"deviceType": "MOBILE", "countryCallingCode": "1", "number": "0000000000"}
+                    ],
+                },
             )
-            
-            # Return the external booking confirmation
-            return Response({
-                'status': 'success',
-                'provider': provider,
-                'external_booking_id': booking_result.get('booking_id'),
-                'local_booking_id': booking_result.get('local_booking_id'),
-                'confirmation': booking_result.get('confirmation'),
-                'total_amount': booking_result.get('total_amount'),
-                'currency': booking_result.get('currency'),
-                'passengers': booking_result.get('passengers', [])
-            }, status=status.HTTP_201_CREATED)
-            
+
+            return Response(
+                {
+                    "provider": provider,
+                    "external_booking_id": booking_result.get("locator"),
+                    "status": booking_result.get("status"),
+                    "currency": booking_result.get("currency", currency),
+                    "total_amount": booking_result.get("total_amount"),
+                    "passengers": booking_result.get("passengers", []),
+                    "raw": booking_result.get("raw", {}),
+                },
+                status=status.HTTP_201_CREATED,
+            )
+
         except ImportError:
             logger.error(f"Flight provider '{provider}' not supported")
             return Response(
                 {"detail": f"Flight provider '{provider}' is not supported"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        except Exception as e:
-            logger.error(f"Flight booking failed with {provider}: {str(e)}")
-            return Response(
-                {"detail": f"Failed to create flight booking: {str(e)}"},
-                status=status.HTTP_400_BAD_REQUEST
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
+        except Exception as e:
+            logger.exception(f"Flight booking failed with {provider}")
+            return Response(
+                {"detail": f"Failed to create flight booking: {str(e)}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    @action(detail=True, methods=['get'])
+    def flight_status(self, request, pk=None):
+        """
+        Get status of an external flight booking.
+        """
+        booking = self.get_object()
+
+        if not booking.external_service or not booking.external_reference:
+            return Response(
+                {"detail": "This is not an external flight booking"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            from adapters.flights import get_flight_adapter
+            flight_adapter = get_flight_adapter(booking.external_service)
+
+            status_result = flight_adapter.get_pnr(
+                locator=booking.external_reference,
+                last_name=request.user.last_name or "",
+            )
+
+            return Response(
+                {
+                    "provider": booking.external_service,
+                    "external_booking_id": booking.external_reference,
+                    "status": status_result.get("status"),
+                    "details": status_result.get("itinerary", {}),
+                }
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to get flight status: {str(e)}")
+            return Response(
+                {"detail": "Failed to retrieve flight status", "error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
     @action(detail=False, methods=['post'])
     def hotel(self, request):
         """Book a hotel room."""

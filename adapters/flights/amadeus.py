@@ -103,18 +103,34 @@ class AmadeusAdapter(FlightsAdapter):
         url = f"{self.base}/v1/booking/flight-orders"
         headers = self._auth_headers()
         payload = {
-            "data": {
-                "type": "flight-order",
-                "flightOffers": [{"id": offer_id}],
-                "travelers": passengers,
-                "contact": contact
-            }
+        "data": {
+            "type": "flight-order",
+            "flightOffers": [{"id": offer_id}],
+            "travelers": passengers,
+            "contact": contact
         }
+    }
         r = requests.post(url, json=payload, headers=headers, timeout=20)
         r.raise_for_status()
         data = r.json()
+
+    # Extract price from response
+        try:
+            price_data = data.get("data", {}).get("flightOffers", [])[0].get("price", {})
+        except Exception:
+            price_data = {}
+
         locator = data.get("data", {}).get("id") or data.get("meta", {}).get("pnr") or f"AM-{int(time.time())}"
-        return {"locator": locator, "status": "CONFIRMED", "raw": data}
+
+        return {
+        "status": "CONFIRMED",
+        "external_booking_id": locator,
+        "local_booking_id": None,
+        "confirmation": data,
+        "total_amount": price_data.get("total"),
+        "currency": price_data.get("currency"),
+        "passengers": passengers,
+    }
 
     def get_pnr(self, *, locator: str, last_name: str) -> Dict[str, Any]:
         url = f"{self.base}/v1/booking/flight-orders/{locator}"

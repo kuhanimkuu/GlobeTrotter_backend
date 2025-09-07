@@ -6,19 +6,18 @@ from django.contrib.contenttypes.models import ContentType
 from django_filters.rest_framework import DjangoFilterBackend
 from datetime import datetime, timedelta
 
-from .models import Hotel, RoomType, Car, AvailabilitySlot
-from .serializers import HotelSerializer, RoomTypeSerializer, CarSerializer
+from .models import Hotel, RoomType, Car, AvailabilitySlot, Flight
+from .serializers import HotelSerializer, RoomTypeSerializer, CarSerializer, FlightSerializer
 
 
 class HotelViewSet(viewsets.ModelViewSet):
-  
-    queryset = Hotel.objects.filter(is_active=True).prefetch_related("room_types", "destination")
+    queryset = Hotel.objects.prefetch_related("room_types")  # removed is_active filter
     serializer_class = HotelSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
     filter_backends = (filters.SearchFilter, filters.OrderingFilter, DjangoFilterBackend)
-    search_fields = ("name", "destination__name", "address")
+    search_fields = ("name", "city", "country", "address")
     ordering_fields = ("name", "rating")
-    filterset_fields = ("destination", "is_active")
+    filterset_fields = ("is_active", "city", "country")
 
     def perform_create(self, serializer):
         user = self.request.user
@@ -26,7 +25,15 @@ class HotelViewSet(viewsets.ModelViewSet):
             raise permissions.PermissionDenied("Authentication required to create a hotel.")
         if not (user.is_staff or getattr(user, "role", None) == "ORGANIZER"):
             raise permissions.PermissionDenied("Only staff or organizers can create hotels.")
-        serializer.save()
+        # Ensure the hotel is active when created
+        serializer.save(is_active=True)
+
+    def create(self, request, *args, **kwargs):
+        """Override create to return full hotel data after POST"""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        hotel = serializer.save(is_active=True)  # make sure is_active=True
+        return Response(self.get_serializer(hotel).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["get"], url_path="availability")
     def availability(self, request, pk=None):
@@ -47,7 +54,6 @@ class HotelViewSet(viewsets.ModelViewSet):
         if end_date <= start_date:
             return Response({"detail": "end must be after start"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Fetch availability slots for all room types
         ct = ContentType.objects.get_for_model(RoomType)
         slots = AvailabilitySlot.objects.filter(
             content_type=ct,
@@ -76,16 +82,14 @@ class HotelViewSet(viewsets.ModelViewSet):
 
         return Response(data)
 
-
-
 class RoomTypeViewSet(viewsets.ModelViewSet):
-    queryset = RoomType.objects.select_related("hotel", "hotel__destination")
+    queryset = RoomType.objects.select_related("hotel")
     serializer_class = RoomTypeSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
     filter_backends = (filters.SearchFilter, filters.OrderingFilter, DjangoFilterBackend)
-    search_fields = ("name", "hotel__name")
+    search_fields = ("name", "hotel__name", "hotel__city", "hotel__country")
     ordering_fields = ("base_price", "capacity")
-    filterset_fields = ("hotel", "hotel__destination")
+    filterset_fields = ("hotel",)
 
     def perform_create(self, serializer):
         user = self.request.user
@@ -97,7 +101,7 @@ class RoomTypeViewSet(viewsets.ModelViewSet):
 
 
 class CarViewSet(viewsets.ModelViewSet):
-    queryset = Car.objects.filter(available=True).select_related("destination")
+    queryset = Car.objects.all().select_related("destination")
     serializer_class = CarSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
     filter_backends = (filters.SearchFilter, filters.OrderingFilter, DjangoFilterBackend)
@@ -126,7 +130,6 @@ class CarViewSet(viewsets.ModelViewSet):
         return Response(grouped)
 
 
-
 class AvailabilityView(APIView):
     def get(self, request):
         obj_type = request.query_params.get("type")
@@ -134,7 +137,6 @@ class AvailabilityView(APIView):
         start = request.query_params.get("start")
         end = request.query_params.get("end")
 
-        # Validate required params
         if not obj_type or not ids or not start or not end:
             return Response(
                 {"detail": "type, ids, start, and end query params are required"},
@@ -184,7 +186,6 @@ class AvailabilityView(APIView):
                     })
                 data.append(hotel_data)
 
-     
         elif obj_type == "roomtype":
             queryset = RoomType.objects.filter(id__in=ids)
             if not queryset.exists():
@@ -215,7 +216,6 @@ class AvailabilityView(APIView):
                     "dates": dates
                 })
 
-      
         elif obj_type == "car":
             queryset = Car.objects.filter(id__in=ids, available=True)
             if not queryset.exists():
@@ -253,3 +253,28 @@ class AvailabilityView(APIView):
             )
 
         return Response(data)
+class FlightViewSet(viewsets.ModelViewSet):
+    queryset = Flight.objects.all()
+    serializer_class = FlightSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    filter_backends = (filters.SearchFilter, filters.OrderingFilter, DjangoFilterBackend)
+    search_fields = ("origin", "destination", "airline")
+    ordering_fields = ("departure_time", "price", "airline")
+    filterset_fields = ("origin", "destination", "airline")
+
+    @action(detail=False, methods=["post"], url_path="search")
+    def search(self, request):
+        origin = request.data.get("origin")
+        destination = request.data.get("destination")
+        departure_date = request.data.get("departure_date")
+
+        qs = self.queryset
+        if origin:
+            qs = qs.filter(origin__iexact=origin)
+        if destination:
+            qs = qs.filter(destination__iexact=destination)
+        if departure_date:
+            qs = qs.filter(departure_time__date=departure_date)
+
+        serializer = self.get_serializer(qs, many=True)
+        return Response(serializer.data)

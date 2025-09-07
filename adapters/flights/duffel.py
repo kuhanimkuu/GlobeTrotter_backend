@@ -29,7 +29,7 @@ class DuffelAdapter(FlightsAdapter):
         headers = self._headers()
         payload = {
             "slices": [{"origin": origin, "destination": destination, "departure_date": depart_date}],
-            "passengers": [{"type": "adt", "id": "p1"} for _ in range(adults)],
+            "passengers": [{"type": "adt", "id": f"p{i+1}"} for i in range(adults)],
             "cabin_class": cabin.upper()
         }
         if return_date:
@@ -53,7 +53,10 @@ class DuffelAdapter(FlightsAdapter):
         r = requests.get(url, headers=headers, timeout=10)
         r.raise_for_status()
         data = r.json()
-        price = {"total": data.get("data", {}).get("total_amount"), "currency": data.get("data", {}).get("total_currency")}
+        price = {
+            "total": data.get("data", {}).get("total_amount"),
+            "currency": data.get("data", {}).get("total_currency")
+        }
         return {"offer_id": offer_id, "priced": True, "price": price, "raw": data}
 
     def book(self, *, offer_id: str, passengers: List[Dict[str, Any]], contact: Dict[str, Any]) -> Dict[str, Any]:
@@ -69,9 +72,28 @@ class DuffelAdapter(FlightsAdapter):
         r = requests.post(url, json=payload, headers=headers, timeout=20)
         r.raise_for_status()
         data = r.json()
+
+        # Extract locator and status
         locator = data.get("data", {}).get("id") or f"DUF-{int(time.time())}"
         status = data.get("data", {}).get("status", "unknown")
-        return {"locator": locator, "status": status, "raw": data}
+
+        # Extract price info (Duffel includes it under booked offer object if expanded)
+        try:
+            price_data = data.get("data", {}).get("booking", {}).get("offer", {}).get("total_amount")
+            currency = data.get("data", {}).get("booking", {}).get("offer", {}).get("total_currency")
+            price = {"total": price_data, "currency": currency}
+        except Exception:
+            price = {"total": None, "currency": None}
+
+        return {
+            "status": status,
+            "external_booking_id": locator,
+            "local_booking_id": None,
+            "confirmation": data,
+            "total_amount": price.get("total"),
+            "currency": price.get("currency"),
+            "passengers": passengers,
+        }
 
     def get_pnr(self, *, locator: str, last_name: str) -> Dict[str, Any]:
         url = f"{self.base}/air/bookings/{locator}"
@@ -81,4 +103,9 @@ class DuffelAdapter(FlightsAdapter):
             return {"locator": locator, "status": "NOT_FOUND", "raw": r.text}
         r.raise_for_status()
         data = r.json()
-        return {"locator": locator, "status": data.get("data", {}).get("status", "unknown"), "itinerary": data.get("data", {}), "raw": data}
+        return {
+            "locator": locator,
+            "status": data.get("data", {}).get("status", "unknown"),
+            "itinerary": data.get("data", {}),
+            "raw": data,
+        }
