@@ -6,7 +6,7 @@ from .base import (
     PaymentAdapter, SmsAdapter, EmailAdapter, PushAdapter, FlightsAdapter, MapsAdapter
 )
 
-# Import all adapter modules so @register executes
+
 _MODULES = (
     # Payments
     "globetrotter.adapters.payments.stripe",

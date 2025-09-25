@@ -72,12 +72,8 @@ class DuffelAdapter(FlightsAdapter):
         r = requests.post(url, json=payload, headers=headers, timeout=20)
         r.raise_for_status()
         data = r.json()
-
-        # Extract locator and status
         locator = data.get("data", {}).get("id") or f"DUF-{int(time.time())}"
         status = data.get("data", {}).get("status", "unknown")
-
-        # Extract price info (Duffel includes it under booked offer object if expanded)
         try:
             price_data = data.get("data", {}).get("booking", {}).get("offer", {}).get("total_amount")
             currency = data.get("data", {}).get("booking", {}).get("offer", {}).get("total_currency")

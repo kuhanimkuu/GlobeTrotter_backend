@@ -17,7 +17,6 @@ logger = logging.getLogger(__name__)
 class BookingError(Exception):
     pass
 
-# Content type mapping for different booking types
 CONTENT_TYPE_MAP = {
     'package': ('catalog', 'tourpackage'),
     'hotel': ('inventory', 'hotel'),
@@ -26,7 +25,7 @@ CONTENT_TYPE_MAP = {
 }
 
 def get_content_type(item_type: str) -> ContentType:
-    """Get ContentType for a given item type"""
+  
     if item_type not in CONTENT_TYPE_MAP:
         raise BookingError(f"Unknown item type: {item_type}")
     
@@ -40,7 +39,7 @@ def _calculate_line_total(unit_price: Decimal, quantity: int) -> Decimal:
     return (unit_price or Decimal("0.00")) * Decimal(quantity)
 
 def _calculate_duration_days(start_date: str, end_date: str) -> int:
-    """Calculate duration in days between two dates"""
+
     start = datetime.strptime(start_date, "%Y-%m-%d").date()
     end = datetime.strptime(end_date, "%Y-%m-%d").date()
     duration = (end - start).days
@@ -55,10 +54,7 @@ def create_generic_booking(
     currency: str = "USD",
     note: Optional[str] = None,
 ) -> Booking:
-    """
-    Create a booking for any type of items (hotels, cars, packages, etc.)
-    Note: Flights are handled separately via external APIs
-    """
+   
     if not items:
         raise BookingError("At least one booking item is required")
 
@@ -166,7 +162,7 @@ def create_tour_package_booking(
         booking=booking,
         content_object=package,
         start_date=start_date,
-        end_date=None,  # Package end date might be calculated differently
+        end_date=None,  
         quantity=guests,
         unit_price=package.base_price,
         line_total=total_price,
@@ -183,12 +179,9 @@ def create_flight_booking(
     currency: str = "USD",
     notes: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """
-    Create a flight booking via external API adapter
-    Returns the external booking confirmation data
-    """
+    
     try:
-        flights_adapter = get_flights_adapter()  # Gets configured adapter (Amadeus/Duffel)
+        flights_adapter = get_flights_adapter() 
         
         # Call the external API through the adapter
         booking_result = flights_adapter.create_booking(
@@ -210,17 +203,17 @@ def create_flight_booking(
             external_service=flights_adapter.get_service_name(),
         )
         
-        # Store flight details as a booking item (generic reference)
+        # Store flight details as a booking item 
         BookingItem.objects.create(
             booking=booking,
-            content_type=None,  # No local model for external flights
+            content_type=None, 
             object_id=None,
             start_date=booking_result.get('departure_date'),
             end_date=booking_result.get('return_date'),
             quantity=len(passengers),
             unit_price=Decimal(str(booking_result.get('total_amount', '0.00'))),
             line_total=Decimal(str(booking_result.get('total_amount', '0.00'))),
-            external_data=booking_result,  # Store full response for reference
+            external_data=booking_result,  
         )
         
         # Return both the external result and local booking reference
@@ -245,7 +238,6 @@ def create_hotel_booking(
     currency: str = "USD",
     note: Optional[str] = None,
 ) -> Booking:
-    """Create a booking for a hotel room"""
     from inventory.models import RoomType
     
     try:
@@ -277,7 +269,6 @@ def create_car_booking(
     currency: str = "USD",
     note: Optional[str] = None,
 ) -> Booking:
-    """Create a booking for a car rental"""
     from inventory.models import Car
     
     try:
@@ -365,15 +356,12 @@ def confirm_booking_on_payment(booking: Booking, payment: Optional[Payment] = No
 
 @transaction.atomic
 def cancel_booking(booking: Booking, *, reason: Optional[str] = None, by_user: bool = True) -> Booking:
-    """Cancel a booking and restore inventory if applicable"""
     if booking is None:
         raise BookingError("booking is required")
 
     booking = Booking.objects.select_for_update().get(pk=booking.pk)
     if booking.status == Booking.Status.CANCELLED:
         return booking
-
-    # For external flight bookings, call the adapter to cancel
     if booking.external_service and booking.external_reference:
         try:
             flights_adapter = get_flights_adapter(booking.external_service)
@@ -387,8 +375,6 @@ def cancel_booking(booking: Booking, *, reason: Optional[str] = None, by_user: b
     booking.status = Booking.Status.CANCELLED
     booking.cancellation_reason = reason or ("Cancelled by user" if by_user else "Cancelled by staff")
     booking.save(update_fields=["status", "cancellation_reason"])
-
-    # Restore capacity for tour packages
     try:
         for bi in booking.items.all():
             obj = bi.content_object
@@ -400,7 +386,6 @@ def cancel_booking(booking: Booking, *, reason: Optional[str] = None, by_user: b
 
     return booking
 
-# Helper read functions
 def list_user_bookings(user, status: Optional[List[str]] = None):
     qs = Booking.objects.filter(user=user).order_by("-created_at")
     if status:
@@ -411,5 +396,4 @@ def get_user_booking(user, booking_id: int) -> Optional[Booking]:
     return Booking.objects.filter(pk=booking_id, user=user).first()
 
 def get_booking_with_items(booking_id: int) -> Optional[Booking]:
-    """Get booking with prefetched items and content objects"""
     return Booking.objects.filter(pk=booking_id).prefetch_related('items').first()

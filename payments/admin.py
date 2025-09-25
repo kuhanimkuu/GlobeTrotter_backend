@@ -87,7 +87,6 @@ class PaymentAdmin(admin.ModelAdmin):
     is_terminal.boolean = True
     is_terminal.short_description = "Terminal Status"
 
-    # Action to mark payments as refunded
     actions = ['mark_as_refunded']
 
     def mark_as_refunded(self, request, queryset):
@@ -95,7 +94,6 @@ class PaymentAdmin(admin.ModelAdmin):
         self.message_user(request, f"{updated} payments marked as refunded.")
     mark_as_refunded.short_description = "Mark selected successful payments as refunded"
 
-    # Customize the change form to show related bookings
     def changeform_view(self, request, object_id=None, form_url='', extra_context=None):
         extra_context = extra_context or {}
         if object_id:
@@ -104,6 +102,5 @@ class PaymentAdmin(admin.ModelAdmin):
                 extra_context['related_booking'] = payment.booking
         return super().changeform_view(request, object_id, form_url, extra_context)
 
-    # Optimize queries for list view
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('booking', 'booking__user')

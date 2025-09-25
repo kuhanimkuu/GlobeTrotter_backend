@@ -5,7 +5,10 @@ from rest_framework.exceptions import ValidationError, PermissionDenied
 from django.shortcuts import get_object_or_404
 from django.core.paginator import Paginator
 import logging
-
+from datetime import datetime
+from adapters.maps import get_maps_adapter
+from adapters.flights import get_flight_adapter
+from adapters.maps import get_maps_adapter
 from .models import Booking
 from .serializers import (
     BookingReadSerializer, 
@@ -34,33 +37,15 @@ class BookingViewSet(
     mixins.DestroyModelMixin,
     viewsets.GenericViewSet,
 ):
-    """
-    Booking API Endpoints
-    
-    Main endpoints:
-    - list:    GET    /api/v1/booking/bookings/         -> list bookings
-    - retrieve: GET    /api/v1/booking/bookings/{id}/   -> get booking details
-    - create:   POST   /api/v1/booking/bookings/        -> create a booking
-    
-    Custom actions:
-    - cancel:   POST   /api/v1/booking/bookings/{id}/cancel/ -> cancel booking
-    - flight:   POST   /api/v1/booking/bookings/flight/    -> book a flight via external API
-    - hotel:    POST   /api/v1/booking/bookings/hotel/     -> book a hotel
-    - car:      POST   /api/v1/booking/bookings/car/       -> book a car
-    - mine:     GET    /api/v1/booking/bookings/mine/      -> get user's bookings
-    """
-
     queryset = Booking.objects.select_related("user", "package").prefetch_related("items")
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        """Return all bookings for staff, only user's bookings for regular users."""
         if self.request.user.is_staff:
             return self.queryset.all()
         return self.queryset.filter(user=self.request.user)
 
     def get_serializer_class(self):
-        """Use appropriate serializer based on action."""
         if self.action in ["create", "update", "partial_update"]:
             return BookingCreateSerializer
         elif self.action == "flight":
@@ -72,18 +57,11 @@ class BookingViewSet(
         return BookingReadSerializer
 
     def perform_create(self, serializer):
-        """Default create behavior."""
         serializer.save(user=self.request.user)
 
     def create(self, request, *args, **kwargs):
-        """
-        Create a generic booking or tour package booking.
-        """
-        # Handle legacy tour package format
         if 'tour_package_id' in request.data:
             return self._create_tour_package_booking(request)
-        
-        # Handle generic booking format
         serializer = self.get_serializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         
@@ -102,7 +80,6 @@ class BookingViewSet(
         return Response(read_serializer.data, status=status.HTTP_201_CREATED)
 
     def _create_tour_package_booking(self, request):
-        """Handle legacy tour package booking format."""
         tour_package_id = request.data.get('tour_package_id')
         start_date = request.data.get('start_date')
         guests = request.data.get('guests', 1)
@@ -135,7 +112,6 @@ class BookingViewSet(
 
     @action(detail=True, methods=['post'])
     def cancel(self, request, pk=None):
-        """Cancel a specific booking."""
         booking = self.get_object()
 
         if not (request.user.is_staff or booking.user == request.user):
@@ -162,12 +138,23 @@ class BookingViewSet(
 
 
     logger = logging.getLogger(__name__)
+    
+    def resolve_airports_from_country(country_name: str) -> list:
+        maps_adapter = get_maps_adapter("fake") 
+
+        results = maps_adapter.geocode(query=country_name).get("results", [])
+        
+        airports = []
+        for res in results:
+            country = res.get("country")
+            country_airports = maps_adapter.get_airports_by_country(country)
+            airports.extend(country_airports)
+        
+        return airports
+
 
     @action(detail=False, methods=['post'])
     def flight(self, request):
-        """
-        Book a flight via external API (Amadeus/Duffel).
-        """
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         validated_data = serializer.validated_data
@@ -190,9 +177,20 @@ class BookingViewSet(
                     ],
                 },
             )
+            from decimal import Decimal
+            booking_obj = Booking.objects.create(
+                user=request.user,
+                total=Decimal(booking_result["total_amount"]),
+                currency=booking_result.get("currency", currency),
+                note="Flight booking",
+                external_reference=booking_result.get("external_booking_id") or booking_result.get("locator"),
+                external_service=provider,
+                status=Booking.Status.CONFIRMED
+            )
 
             return Response(
-                {
+                {   
+                    "id": booking_obj.id,
                     "provider": provider,
                     "external_booking_id": booking_result.get("locator"),
                     "status": booking_result.get("status"),
@@ -220,9 +218,6 @@ class BookingViewSet(
 
     @action(detail=True, methods=['get'])
     def flight_status(self, request, pk=None):
-        """
-        Get status of an external flight booking.
-        """
         booking = self.get_object()
 
         if not booking.external_service or not booking.external_reference:
@@ -257,7 +252,6 @@ class BookingViewSet(
             )
     @action(detail=False, methods=['post'])
     def hotel(self, request):
-        """Book a hotel room."""
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         validated_data = serializer.validated_data
@@ -293,7 +287,6 @@ class BookingViewSet(
 
     @action(detail=False, methods=['post'])
     def car(self, request):
-        """Book a car."""
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         validated_data = serializer.validated_data
@@ -327,7 +320,6 @@ class BookingViewSet(
 
     @action(detail=False, methods=['get'])
     def mine(self, request):
-        """Get current user's bookings with filters."""
         status_filter = request.query_params.get('status')
         page = int(request.query_params.get('page', 1))
         page_size = int(request.query_params.get('page_size', 10))
@@ -343,8 +335,6 @@ class BookingViewSet(
                 bookings = bookings.filter(status__in=filtered_statuses)
         
         bookings = bookings.order_by('-created_at').select_related('package').prefetch_related('items')
-        
-        # Pagination
         paginator = Paginator(bookings, page_size)
         try:
             page_obj = paginator.page(page)
@@ -366,7 +356,6 @@ class BookingViewSet(
 
     @action(detail=True, methods=['get'])
     def flight_status(self, request, pk=None):
-        """Get status of an external flight booking."""
         booking = self.get_object()
         
         if not booking.external_service or not booking.external_reference:
@@ -391,5 +380,62 @@ class BookingViewSet(
             logger.error(f"Failed to get flight status: {str(e)}")
             return Response(
                 {"detail": "Failed to retrieve flight status", "error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    @action(detail=False, methods=['post'])
+    def flight_search(self, request):
+        data = request.data
+        origin_airports = data.get("origin_airports", [])
+        destination_airports = data.get("destination_airports", [])
+        departure_date = data.get("departure_date")
+        passengers = data.get("passengers", 1)
+        package_start_date = data.get("package_start_date")
+
+        if not origin_airports or not destination_airports or not departure_date:
+            return Response(
+                {"detail": "origin_airports, destination_airports, and departure_date are required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            flight_adapter = get_flight_adapter("fake")
+            package_start_dt = None
+            if package_start_date:
+                package_start_dt = datetime.strptime(package_start_date, "%Y-%m-%d")
+
+            offers = []
+
+            for origin_code in origin_airports:
+                for dest_code in destination_airports:
+                    if not origin_code or not dest_code:
+                        continue
+
+                    search_result = flight_adapter.search(
+                        origin=origin_code,
+                        destination=dest_code,
+                        departure_date=departure_date,
+                        adults=passengers
+                    )
+
+                    for offer in search_result.get("offers", []):
+                        if package_start_dt:
+                            first_segment = offer["itineraries"][0]["segments"][0]
+                            departure_str = first_segment["departure"]["at"]
+                            departure_dt = datetime.strptime(departure_str, "%Y-%m-%dT%H:%M:%SZ")
+
+                            if departure_dt > package_start_dt:
+                                continue
+
+                        offers.append(offer)
+
+            if not offers:
+                return Response({"detail": "No flight options found."}, status=status.HTTP_404_NOT_FOUND)
+
+            return Response({"offers": offers})
+
+        except Exception as e:
+            logger.exception("Flight search failed")
+            return Response(
+                {"detail": f"Flight search failed: {str(e)}"},
                 status=status.HTTP_400_BAD_REQUEST
             )

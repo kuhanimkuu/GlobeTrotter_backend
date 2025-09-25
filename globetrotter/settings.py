@@ -37,9 +37,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = bool(os.getenv('DEBUG'))
-
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS','*').split(',')
+DEBUG = True
+if DEBUG:
+    ALLOWED_HOSTS=['*']
+else:
+    ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS','*').split(',')
+    STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+    STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 
 # Application definition
@@ -54,9 +58,10 @@ INSTALLED_APPS = [
     'rest_framework',
     'cloudinary',
     'rest_framework.authtoken',
-      "drf_spectacular",
+    "drf_spectacular",
     "drf_spectacular_sidecar",
      "corsheaders",
+     "django_extensions",
     #My apps
     'users',
     'catalog',
@@ -72,6 +77,7 @@ MIDDLEWARE = [
      "corsheaders.middleware.CorsMiddleware",
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -84,6 +90,7 @@ ROOT_URLCONF = 'globetrotter.urls'
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "http://localhost:4173"
 ]
 
 CSRF_TRUSTED_ORIGINS = [
@@ -200,7 +207,7 @@ REST_FRAMEWORK = {
 }
 """
 
-ADAPTERS_CONFIG = {
+ADAPTERS = {
     # payments
     "payments.stripe": {
         "api_key": os.getenv("STRIPE_API_KEY"),
@@ -237,11 +244,16 @@ ADAPTERS_CONFIG = {
         "client_id": os.getenv("AMADEUS_CLIENT_ID"),
         "client_secret": os.getenv("AMADEUS_CLIENT_SECRET"),
         "environment": os.getenv("AMADEUS_ENV","test"),
-        "token_ttl_seconds": 300,  # test/prod
+        "token_ttl_seconds": 300,
     },
     "flights.duffel": {
         "access_token": os.getenv("DUFFEL_ACCESS_TOKEN"),
          "base_url": os.getenv("DUFFEL_BASE_URL", "https://api.duffel.com"),
+    },
+    "flights.fake": {  
+        "adapter": "fake",
+        "environment": "test",
+        "token_ttl_seconds": 300,
     },
 
     # maps
@@ -251,5 +263,42 @@ ADAPTERS_CONFIG = {
     "maps.mapbox": {
         "access_token": os.getenv("MAPBOX_ACCESS_TOKEN"),
         "style": os.getenv("MAPBOX_STYLE", "streets-v11"),
+    },
+}
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "verbose": {
+            "format": "[{levelname}] {asctime} {name} — {message}",
+            "style": "{",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
+        },
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": "DEBUG",
+    },
+    "loggers": {
+        "django": {
+            "handlers": ["console"],
+            "level": "INFO",  
+            "propagate": False,
+        },
+        "catalog": {      
+            "handlers": ["console"],
+            "level": "DEBUG",
+            "propagate": False,
+        },
+        "inventory": {        
+            "handlers": ["console"],
+            "level": "DEBUG",
+            "propagate": False,
+        },
     },
 }

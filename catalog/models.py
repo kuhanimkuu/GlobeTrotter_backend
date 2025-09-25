@@ -3,7 +3,7 @@ from django.db import models
 from django.utils.text import slugify
 from cloudinary.models import CloudinaryField
 from django.conf import settings
-
+from adapters.maps import get_maps_adapter
 
 class Destination(models.Model):
     name = models.CharField(max_length=255)
@@ -14,9 +14,15 @@ class Destination(models.Model):
     latitude = models.FloatField(null=True, blank=True)
     longitude = models.FloatField(null=True, blank=True)
     slug = models.SlugField(unique=True, blank=True)
-
-    # Changed to Cloudinary
-    cover_image = CloudinaryField("cover_image", blank=True, null=True)
+    cover_image = CloudinaryField(
+    "image",
+    folder="globetrotter/destinations",
+    resource_type="image",
+    use_filename=True,
+    unique_filename=False,
+    blank=True,
+    null=True,
+)
 
     def save(self, *args, **kwargs):
         if not self.slug:
@@ -31,6 +37,7 @@ class Destination(models.Model):
 
     def __str__(self):
         return f"{self.name} — {self.city}, {self.country}"
+
 
 
 class TourPackage(models.Model):
@@ -49,6 +56,9 @@ class TourPackage(models.Model):
     slug = models.SlugField(max_length=260, unique=True, blank=True)
     summary = models.CharField(max_length=255, blank=True)
     description = models.TextField(blank=True)
+    highlights = models.TextField(blank=True, help_text="Key package highlights")
+    policies = models.TextField(blank=True, help_text="Important policies")
+
     start_date = models.DateTimeField(null=True, blank=True)
     end_date = models.DateTimeField(null=True, blank=True)
     duration_days = models.PositiveSmallIntegerField()
@@ -64,6 +74,26 @@ class TourPackage(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     main_image = CloudinaryField("main_image", blank=True, null=True)
+    hotel = models.ForeignKey(
+        "inventory.Hotel",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="tour_packages"
+    )
+    car = models.ForeignKey(
+        "inventory.Car",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="tour_packages"
+    )
+    commission = models.DecimalField(
+        max_digits=5, decimal_places=2, default=0.0,
+        help_text="Organizer commission %"
+    )
+    nights = models.PositiveSmallIntegerField(default=1)
+    car_days = models.PositiveSmallIntegerField(default=1)
 
     class Meta:
         ordering = ["-created_at"]
@@ -83,10 +113,15 @@ class TourPackage(models.Model):
             self.slug = slug
         super().save(*args, **kwargs)
 
+    @property
+    def total_price(self):
+        hotel_price = (self.hotel.price if self.hotel else 0) * self.nights
+        car_price = (self.car.price if self.car else 0) * self.car_days
+        commission_amount = ((hotel_price + car_price) * self.commission) / 100
+        return hotel_price + car_price + commission_amount
+
     def __str__(self):
         return f"{self.title} — {self.destination.name}"
-
-
 class PackageImage(models.Model):
     package = models.ForeignKey(TourPackage, on_delete=models.CASCADE, related_name="images")
     image = CloudinaryField("image")

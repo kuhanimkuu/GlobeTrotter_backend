@@ -10,9 +10,6 @@ from .serializers import (
 )
 
 User = get_user_model()
-
-
-# 🔹 Registration view
 class RegisterView(generics.CreateAPIView):
     serializer_class = RegisterSerializer
     permission_classes = [permissions.AllowAny]
@@ -32,25 +29,16 @@ class RegisterView(generics.CreateAPIView):
             status=status.HTTP_201_CREATED,
             headers=headers,
         )
-
-
-# 🔹 Get / Update logged-in user profile
 class MeView(generics.RetrieveUpdateAPIView):
     serializer_class = UserDetailSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_object(self):
         return self.request.user
-
-
-# 🔹 List all users (Admin only)
 class UserListView(generics.ListAPIView):
     queryset = User.objects.all()
     serializer_class = UserLiteSerializer
     permission_classes = [permissions.IsAdminUser]
-
-
-# 🔹 Logout endpoint
 class LogoutView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 

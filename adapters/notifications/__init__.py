@@ -6,10 +6,10 @@ from typing import List
 logger = logging.getLogger(__name__)
 
 _MODULES = (
-    "globetrotter.adapters.notifications.sms_twilio",
-    "globetrotter.adapters.notifications.email_sendgrid",
-    "globetrotter.adapters.notifications.push_fcm",
-    "globetrotter.adapters.notifications.fake",
+    "adapters.notifications.sms_twilio",
+    "adapters.notifications.email_sendgrid",
+    "adapters.notifications.push_fcm",
+    "adapters.notifications.fake",
 )
 
 for mod in _MODULES:

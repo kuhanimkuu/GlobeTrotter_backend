@@ -5,6 +5,7 @@ aiosignal==1.4.0
 anyio==4.10.0
 asgiref==3.9.1
 attrs==25.3.0
+Brotli==1.1.0
 CacheControl==0.14.3
 cachetools==5.5.2
 certifi==2025.8.3

@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from payments.models import RefundRequest 
 from .models import Booking, BookingItem
 from users.serializers import UserLiteSerializer
 from django.contrib.contenttypes.models import ContentType
@@ -38,7 +39,6 @@ class BookingItemReadSerializer(serializers.ModelSerializer):
             return None
 
     def get_item_type(self, obj):
-        """Return the item type based on content_type"""
         content_type = obj.content_type
         if content_type:
             type_map = {
@@ -49,17 +49,39 @@ class BookingItemReadSerializer(serializers.ModelSerializer):
             }
             return type_map.get(content_type.model, content_type.model)
         return None
+class PaymentSerializer(serializers.Serializer):
+    payment_method = serializers.CharField(required=True)
+    amount = serializers.DecimalField(max_digits=12, decimal_places=2, required=True)
+    currency = serializers.CharField(default="USD")
+    metadata = serializers.DictField(required=False)
 
 
+class RefundRequestSerializer(serializers.ModelSerializer):
+    requested_by = UserLiteSerializer(read_only=True)
+    processed_by = UserLiteSerializer(read_only=True)
+
+    class Meta:
+        model = RefundRequest
+        fields = (
+            "id",
+            "amount",
+            "reason",
+            "status",
+            "requested_by",
+            "processed_by",
+            "created_at",
+            "updated_at",
+        )
 class BookingReadSerializer(serializers.ModelSerializer):
     user = UserLiteSerializer(read_only=True)
     user_id = serializers.PrimaryKeyRelatedField(source="user", read_only=True)
     items = BookingItemReadSerializer(many=True, read_only=True)
+    refund_requests = RefundRequestSerializer(many=True, read_only=True)  # ✅ include refunds
     booking_type = serializers.SerializerMethodField()
     external_service = serializers.CharField(read_only=True)
     external_reference = serializers.CharField(read_only=True)
-    cancellation_reason = serializers.CharField(read_only=True)  # ✅ NEW: match updated model
-
+    cancellation_reason = serializers.CharField(read_only=True)
+    payment_status = serializers.SerializerMethodField()
     class Meta:
         model = Booking
         fields = (
@@ -69,18 +91,24 @@ class BookingReadSerializer(serializers.ModelSerializer):
             "status",
             "total",
             "currency",
+            "payment_status",
             "created_at",
             "items",
             "booking_type",
             "note",
             "external_service",
             "external_reference",
-            "cancellation_reason",   # ✅ included
+            "cancellation_reason",
+            "refund_requests", 
         )
+    def get_payment_status(self, obj):
+   
+        if hasattr(obj, "payment") and obj.payment:
+            return obj.payment.status
+        return None
 
     def get_booking_type(self, obj):
-        """Determine booking type"""
-        if obj.package_id:  # ✅ nullable-safe check
+        if obj.package_id:
             return "package"
         if obj.external_service:
             return "flight"
@@ -94,7 +122,6 @@ class BookingReadSerializer(serializers.ModelSerializer):
             return "mixed"
 
         return "unknown"
-
 
 class BookingItemCreateSerializer(serializers.Serializer):
     type = serializers.ChoiceField(choices=("package", "hotel", "room", "car"))
@@ -122,7 +149,7 @@ class BookingCreateSerializer(serializers.Serializer):
     currency = serializers.CharField(default="USD")
     items = BookingItemCreateSerializer(many=True)
     note = serializers.CharField(required=False, allow_blank=True)
-
+    payment = PaymentSerializer(required=False)
     def validate(self, attrs):
         items = attrs.get("items", [])
         if not items:
@@ -180,13 +207,13 @@ class BookingCreateSerializer(serializers.Serializer):
             "quantity": quantity,
             "unit_price": unit_price,
         }
-
     def create(self, validated_data):
         request = self.context.get("request")
         user = getattr(request, "user", None)
         if user is None or user.is_anonymous:
             raise ValidationError(_("Authentication required to create bookings."))
 
+        payment_data = validated_data.pop("payment", None)
         items_data = validated_data["items"]
         currency = validated_data.get("currency", "USD")
         note = validated_data.get("note", "")
@@ -205,29 +232,44 @@ class BookingCreateSerializer(serializers.Serializer):
         if detected_package:
             booking = services.create_tour_package_booking(
                 user=user,
-                package=detected_package,
-                items=parsed_items,
+                tour_package_id=detected_package.id,
+                start_date=validated_data.get("start_date"),
+                guests=validated_data.get("guests", 1),
                 currency=currency,
-                note=note
+                note=note,
             )
         else:
-            generic_items = []
-            for item in parsed_items:
-                generic_items.append({
+            generic_items = [
+                {
                     "type": self._get_item_type(item["content_object"]),
                     "id": item["content_object"].id,
                     "start_date": item["start_date"],
                     "end_date": item["end_date"],
                     "quantity": item["quantity"],
                     "unit_price": str(item["unit_price"]) if item["unit_price"] else None,
-                })
+                }
+                for item in parsed_items
+            ]
 
             booking = services.create_generic_booking(
-                user=user,
-                items=generic_items,
-                currency=currency,
-                note=note
+                user=user, items=generic_items, currency=currency, note=note
             )
+
+        if payment_data:
+            from payments.services import initiate_payment_for_booking
+            try:
+                payment = initiate_payment_for_booking(
+                    booking=booking,
+                    user=user,
+                    payment_method=payment_data["payment_method"],
+                    amount=payment_data["amount"],
+                    currency=payment_data.get("currency", booking.currency),
+                    metadata=payment_data.get("metadata", {}),
+                )
+                booking.payment_status = payment.status
+                booking.save()
+            except Exception as e:
+                raise ValidationError({"payment": f"Payment failed: {str(e)}"})
 
         return booking
 
@@ -251,14 +293,14 @@ class PassengerSerializer(serializers.Serializer):
     first_name = serializers.CharField()
     last_name = serializers.CharField()
     email = serializers.EmailField(required=False, allow_blank=True)
-    dob = serializers.DateField(required=False)       # optional: date of birth
+    dob = serializers.DateField(required=False)    
     gender = serializers.ChoiceField(
-        choices=["M", "F", "X"], required=False       # expand if needed
+        choices=["M", "F", "X"], required=False      
     )
     phone = serializers.CharField(required=False, allow_blank=True)
 
     def validate(self, data):
-        # Example: if email is provided, ensure it's not empty
+        
         if "email" in data and not data["email"].strip():
             raise serializers.ValidationError("Passenger email must not be empty if provided")
         return data
@@ -270,7 +312,7 @@ class ExternalFlightBookingSerializer(serializers.Serializer):
     currency = serializers.CharField(default="USD", required=False)
     note = serializers.CharField(required=False, allow_blank=True)
     payment_token = serializers.CharField(required=False)
-
+    payment = PaymentSerializer(required=False)
 
 class HotelBookingSerializer(serializers.Serializer):
     room_type_id = serializers.IntegerField()
@@ -279,7 +321,7 @@ class HotelBookingSerializer(serializers.Serializer):
     rooms = serializers.IntegerField(min_value=1, default=1)
     currency = serializers.CharField(default="USD")
     note = serializers.CharField(required=False, allow_blank=True)
-
+    payment = PaymentSerializer(required=False)
     def validate(self, data):
         check_in = data.get("check_in_date")
         check_out = data.get("check_out_date")
@@ -296,6 +338,7 @@ class CarBookingSerializer(serializers.Serializer):
     end_date = serializers.DateField()
     currency = serializers.CharField(default="USD")
     note = serializers.CharField(required=False, allow_blank=True)
+    payment = PaymentSerializer(required=False)
 
     def validate(self, data):
         start_date = data.get("start_date")

@@ -13,12 +13,11 @@ class ReviewSerializer(serializers.ModelSerializer):
         queryset=User.objects.all(),
         source="user",
         write_only=True,
-        required=False  # because we auto-assign in perform_create
+        required=False
     )
-
-    # Expose GenericForeignKey as friendly fields
     content_type = serializers.CharField(write_only=True)
     object_id = serializers.IntegerField(write_only=True)
+    content_object_display = serializers.SerializerMethodField()
 
     class Meta:
         model = Review
@@ -33,14 +32,20 @@ class ReviewSerializer(serializers.ModelSerializer):
             "body",
             "is_approved",
             "created_at",
+            "content_object_display",
         )
         read_only_fields = ("is_approved", "created_at", "user")
 
     def create(self, validated_data):
-        # Convert content_type string to ContentType instance
         content_type_str = validated_data.pop("content_type")
+        if "." not in content_type_str:
+            raise serializers.ValidationError(
+                {"content_type": "Must be in the format 'app_label.model' (e.g. 'inventory.hotel')."}
+            )
+
+        app_label, model = content_type_str.lower().split(".")
         try:
-            ct = ContentType.objects.get(model=content_type_str.lower())
+            ct = ContentType.objects.get(app_label=app_label, model=model)
         except ContentType.DoesNotExist:
             raise serializers.ValidationError(
                 {"content_type": f"Invalid content type: {content_type_str}"}
@@ -48,3 +53,9 @@ class ReviewSerializer(serializers.ModelSerializer):
 
         validated_data["content_type"] = ct
         return super().create(validated_data)
+
+    def get_content_object_display(self, obj):
+        try:
+            return str(obj.content_object)
+        except Exception:
+            return None

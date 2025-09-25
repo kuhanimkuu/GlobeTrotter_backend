@@ -3,7 +3,12 @@ from decimal import Decimal
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from cloudinary.models import CloudinaryField
+from django.utils import timezone
+from datetime import timedelta
 
+
+def default_expiry():
+    return timezone.now() + timedelta(hours=6)
 # Create your models here.
 class Hotel(models.Model):
     name = models.CharField(max_length=180)
@@ -13,7 +18,7 @@ class Hotel(models.Model):
     destination = models.CharField(max_length=255, blank=True, null=True)
     rating = models.DecimalField(max_digits=2, decimal_places=1, null=True, blank=True)
     is_active = models.BooleanField(default=True)
-    description = models.TextField(blank=True)  # <-- add this
+    description = models.TextField(blank=True)  
     cover_image = CloudinaryField(
         "image",
         folder="globetrotter/hotels",
@@ -105,20 +110,29 @@ from decimal import Decimal
 
 
 class Flight(models.Model):
-    provider = models.CharField(max_length=100, help_text="e.g. Amadeus, Duffel, Fake")
-    offer_id = models.CharField(max_length=255, help_text="Reference to external API offer")
-    origin = models.CharField(max_length=3)
-    destination = models.CharField(max_length=3)
-    departure_date = models.DateField()
+    provider = models.CharField(max_length=100)   
+    offer_id = models.CharField(max_length=255)  
+    origin = models.CharField(max_length=3)       
+    destination = models.CharField(max_length=3)  
+    flight_number = models.CharField(max_length=50, blank=True, null=True)
+    airline = models.CharField(max_length=100, blank=True, null=True)
+
+    departure_time = models.DateTimeField(null=True, blank=True) 
+    arrival_time = models.DateTimeField(null=True, blank=True)
+
+    seats_available = models.PositiveIntegerField(default=0)
+
+    departure_date = models.DateField(null=True, blank=True)
     return_date = models.DateField(null=True, blank=True)
 
     price = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     currency = models.CharField(max_length=3, default="USD")
 
+    expires_at = models.DateTimeField(default=default_expiry)
     created_at = models.DateTimeField(auto_now_add=True)
 
-    class Meta:
-        ordering = ["-created_at"]
+    def is_expired(self):
+        return timezone.now() > self.expires_at
 
     def __str__(self):
-        return f"{self.origin} → {self.destination} ({self.departure_date})"
+        return f"{self.origin} → {self.destination} ({self.airline})"

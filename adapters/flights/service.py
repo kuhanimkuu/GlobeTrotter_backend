@@ -1,12 +1,7 @@
-# globetrotter/adapters/flights/service.py
 from ..registry import get
 from typing import Dict, Any, List
 
 def get_adapter(name: str):
-    """
-    Returns an instance of the flight adapter by name.
-    Example name: 'flights.amadeus'
-    """
     AdapterClass = get(name)
     if AdapterClass is None:
         raise ValueError(f"Flight adapter '{name}' not found")

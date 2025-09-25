@@ -19,7 +19,6 @@ class TwilioSmsAdapter(SmsAdapter):
                 import twilio.rest as _twilio_rest
                 self._client = _twilio_rest.Client(self.account_sid, self.auth_token)
             except Exception:
-                # SDK missing or import error — keep adapter constructible but non-functional until configured
                 logger.debug("Twilio SDK not available or failed to import.")
 
     def send_sms(self, *, to: str, message: str, sender_id: Optional[str] = None) -> Dict[str, Any]:

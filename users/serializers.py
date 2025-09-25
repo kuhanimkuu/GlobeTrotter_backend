@@ -35,8 +35,6 @@ class RegisterSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         if attrs.get("password") != attrs.get("password2"):
             raise serializers.ValidationError({"password": "Passwords must match."})
-
-        # ✅ restrict role to CUSTOMER or AGENT
         if attrs.get("role") not in ["CUSTOMER", "AGENT", "ADMIN"]:
             raise serializers.ValidationError({"role": "Invalid role. Choose CUSTOMER or AGENT ."})
 

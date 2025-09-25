@@ -18,7 +18,7 @@ urlpatterns = [
     path("auth/token/verify/", TokenVerifyView.as_view(), name="token_verify"),
 
     # Session-based login/logout (DRF built-in)
-    path("auth/", include("rest_framework.urls")),  # adds /login/ and /logout/
+    path("auth/", include("rest_framework.urls")), 
 
     # Admin-only user listing
     path("list/", UserListView.as_view(), name="user-list"),

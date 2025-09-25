@@ -4,26 +4,33 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+
 _MODULES = (
-    "globetrotter.adapters.payments.stripe",
-    "globetrotter.adapters.payments.mpesa",
-    "globetrotter.adapters.payments.flutterwave",
+    "adapters.payments.stripe",
+    "adapters.payments.mpesa",
+    "adapters.payments.flutterwave",
+    "adapters.payments.fake", 
 )
 
 for _m in _MODULES:
     try:
         import_module(_m)
     except Exception as exc:
-        logger.debug("could not import payment adapter %s: %s", _m, exc)
+        logger.debug("Could not import payment adapter %s: %s", _m, exc)
 
 
 def available_payment_adapters() -> List[str]:
+    """
+    Return a list of available payment adapters (short names).
+    Example: ["stripe", "mpesa", "flutterwave", "fake"]
+    """
     names = []
     for m in _MODULES:
         short = m.split(".")[-1]
         names.append(short)
+
     try:
-        from ..registry import all_names 
+        from ..registry import all_names
         for n in all_names():
             if n.startswith("payments."):
                 short = n.split(".", 1)[1]
@@ -31,10 +38,17 @@ def available_payment_adapters() -> List[str]:
                     names.append(short)
     except Exception:
         pass
+
     return sorted(names)
 
 
-def get_payment_adapter(name: str, config: Optional[Dict[str, Any]] = None, *, use_registry: bool = True):
+def get_payment_adapter(
+    name: str, 
+    config: Optional[Dict[str, Any]] = None, 
+    *, 
+    use_registry: bool = True
+):
+   
     name = name.lower()
 
     if use_registry:
@@ -60,6 +74,7 @@ def get_payment_adapter(name: str, config: Optional[Dict[str, Any]] = None, *, u
 
     if AdapterCls is None:
         raise ImportError(f"No Adapter class found in {module_path}. Expected a class like 'StripeAdapter'.")
+
     try:
         inst = AdapterCls(config or {})
     except TypeError:

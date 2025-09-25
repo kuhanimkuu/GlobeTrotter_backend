@@ -1,20 +1,19 @@
-# adapters/flights/__init__.py
 from importlib import import_module
 import logging
 from typing import List
 from .amadeus import AmadeusAdapter
 from .duffel import DuffelAdapter
 from .fake import FakeFlightsAdapter
+from ..registry import get as get_adapter_registry
 logger = logging.getLogger(__name__)
 
-# List of adapter modules to try importing
 _MODULES = (
-    "globetrotter.adapters.flights.amadeus",
-    "globetrotter.adapters.flights.duffel",
-    "globetrotter.adapters.flights.fake",  # test adapter
+    "adapters.flights.amadeus",
+    "adapters.flights.duffel",
+    "adapters.flights.fake", 
 )
 
-# Dynamically import adapters and log failures
+
 for mod in _MODULES:
     try:
         import_module(mod)
@@ -22,23 +21,18 @@ for mod in _MODULES:
         logger.warning("Could not import flights adapter %s: %s", mod, exc)
 
 
-# Utility function: list all available flight adapters
 def available_flights_adapters() -> List[str]:
-    """
-    Returns a list of available flight adapter names.
-    """
+  
     try:
-        from ..registry import all_names
+        from adapters.registry import all_names
         return [n.split(".", 1)[1] for n in all_names() if n.startswith("flights.")]
     except Exception:
         logger.warning("Registry unavailable, returning empty flight adapter list")
         return []
 
 
-# Optional: Default adapter
-DEFAULT_FLIGHT_ADAPTER = "fake"
+DEFAULT_FLIGHT_ADAPTER = "amadeus"
 
-# Central search function to unify all adapters
 def search_flights(origin: str, destination: str, provider: str = None):
     provider = provider or DEFAULT_FLIGHT_ADAPTER
     if provider == "amadeus":
@@ -51,10 +45,18 @@ def search_flights(origin: str, destination: str, provider: str = None):
         raise ValueError(f"Unknown flight provider: {provider}")
 
     return search(origin, destination)
-  # optional
+
 
 ADAPTERS = {
     "amadeus": AmadeusAdapter,
     "duffel": DuffelAdapter,
-    "fake": FakeFlightsAdapter,  # good for testing
+    "fake": FakeFlightsAdapter,  
 }
+def get_flight_adapter(name: str):
+    if "." not in name:
+        name = f"flights.{name.lower()}"
+    try:
+        AdapterClass = get_adapter_registry(name)
+        return AdapterClass()
+    except KeyError:
+        raise ImportError(f"Flight provider '{name}' is not supported")

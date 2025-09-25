@@ -4,6 +4,8 @@ from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.contenttypes.fields import GenericForeignKey
 from cloudinary.models import CloudinaryField
+from django.db.models.signals import post_save, post_delete
+from django.dispatch import receiver
 
 User = settings.AUTH_USER_MODEL
 
@@ -48,7 +50,7 @@ class Booking(models.Model):
         help_text="Optional upload of proof or travel voucher"
     )
 
-    # External integrations support
+
     external_reference = models.CharField(
         max_length=255, blank=True, null=True,
         help_text="External provider booking ID"
@@ -71,6 +73,18 @@ class Booking(models.Model):
     def __str__(self):
         return f"Booking {self.pk} by {self.user}"
 
+    def recalc_total(self, save=True):
+        """
+        Recalculate the booking total from all items.
+        """
+        total = Decimal("0.00")
+        for item in self.items.all():
+            total += item.line_total or Decimal("0.00")
+        self.total = total
+        if save:
+            self.save(update_fields=["total"])
+        return total
+
 
 class BookingItem(models.Model):
     booking = models.ForeignKey(
@@ -79,7 +93,7 @@ class BookingItem(models.Model):
         related_name="items"
     )
 
-    # Generic relation so we can link to Car/Hotel/Flight/etc.
+
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE, null=True, blank=True)
     object_id = models.PositiveIntegerField(null=True, blank=True)
     content_object = GenericForeignKey("content_type", "object_id")
@@ -98,16 +112,30 @@ class BookingItem(models.Model):
         default=Decimal("0.00")
     )
 
-    # External booking payload (for flights, APIs, etc.)
     external_data = models.JSONField(blank=True, null=True)
 
     class Meta:
         indexes = [models.Index(fields=["booking"])]
 
     def save(self, *args, **kwargs):
-        # Always recalc line total
+  
+        if self.content_object and hasattr(self.content_object, "commission"):
+            base_price = getattr(self.content_object, "base_price", Decimal("0.00"))
+            commission_rate = getattr(self.content_object, "commission", 0)
+            commission_amount = (base_price * commission_rate) / 100
+          
+            self.unit_price = base_price + commission_amount
+
         self.line_total = (self.unit_price or Decimal("0.00")) * self.quantity
         super().save(*args, **kwargs)
 
     def __str__(self):
         return f"Item {self.pk} of Booking {self.booking_id}"
+
+
+
+@receiver(post_save, sender=BookingItem)
+@receiver(post_delete, sender=BookingItem)
+def update_booking_total(sender, instance, **kwargs):
+    if instance.booking_id:
+        instance.booking.recalc_total()

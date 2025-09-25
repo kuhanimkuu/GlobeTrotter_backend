@@ -4,6 +4,7 @@ import stripe
 from ..registry import register
 from ..base import PaymentAdapter
 
+
 @register("payments.stripe")  
 class StripeAdapter(PaymentAdapter):
     
@@ -12,11 +13,11 @@ class StripeAdapter(PaymentAdapter):
         stripe.api_key = self.config.get("api_key")
         self.webhook_secret = self.config.get("webhook_secret")
 
+
     def create_checkout(self, *, amount: str, currency: str, customer: Dict[str, str],
                        metadata: Dict[str, Any], return_urls: Dict[str, str]) -> Dict[str, Any]:
-       
         try:
-            # Convert amount to cents safely
+    
             amount_cents = int(Decimal(amount) * 100)
             
             session = stripe.checkout.Session.create(
@@ -45,24 +46,71 @@ class StripeAdapter(PaymentAdapter):
             }
             
         except Exception as e:
-            # Handle Stripe errors properly
-            raise
+            raise RuntimeError(f"Stripe checkout creation failed: {e}") from e
 
-    def refund(self, *, txn_ref: str, amount: Optional[str] = None, 
-              reason: Optional[str] = None) -> Dict[str, Any]:
-        """Create a Stripe refund"""
+   
+    def process(
+    self,
+    *,
+    amount: str,
+    currency: str,
+    booking_id: str,
+    card_details: Optional[Dict[str, Any]] = None,
+    user: Any = None,
+) -> Dict[str, Any]:
+        checkout = self.create_checkout(
+        amount=amount,
+        currency=currency,
+        customer={
+            "email": getattr(user, "email", None) if user else None,
+            "name": getattr(user, "name", "Guest") if user else "Guest",
+        },
+        metadata={"reference": booking_id},
+        return_urls={
+            "success": f"http://localhost/payment/success?booking={booking_id}",
+            "cancel": f"http://localhost/payment/cancel?booking={booking_id}",
+        },
+    )
+        return {
+        "status": "PENDING",  
+        "currency": currency,
+        "amount": amount,
+        "transaction_id": checkout["session_id"],
+        "url": checkout["url"],
+        "raw": checkout,
+    }
+
+
+
+    def refund(
+    self,
+    *,
+    txn_ref: str,
+    amount: Optional[str] = None,
+    reason: Optional[str] = None
+) -> Dict[str, Any]:
+        """Issue a refund for a Stripe payment intent."""
         try:
-            refund_params = {'payment_intent': txn_ref}
+            refund_params = {"payment_intent": txn_ref}
+
             if amount:
-                refund_params['amount'] = int(Decimal(amount) * 100)
+                refund_params["amount"] = int(Decimal(amount) * 100)  
             if reason:
-                refund_params['reason'] = reason
-                
+                refund_params["reason"] = reason  
+
             refund = stripe.Refund.create(**refund_params)
-            return {'refund_id': refund.id, 'raw': refund}
-            
+
+            return {
+            "refund_id": refund.id,
+            "status": refund.status,
+            "amount": refund.amount,
+            "currency": refund.currency,
+            "raw": refund,  
+        }
+
         except Exception as e:
-            raise
+            raise RuntimeError(f"Stripe refund failed: {e}") from e
+
 
     def verify_webhook(self, *, payload: bytes, headers: Dict[str, str]) -> bool:
         """Verify Stripe webhook signature"""
@@ -71,11 +119,13 @@ class StripeAdapter(PaymentAdapter):
             
         try:
             signature = headers.get('stripe-signature', '')
-            event = stripe.Webhook.construct_event(
+            stripe.Webhook.construct_event(
                 payload, signature, self.webhook_secret
             )
             return True
         except stripe.error.SignatureVerificationError:
+            return False
+        except Exception:
             return False
 
     def parse_webhook(self, *, payload: bytes, headers: Dict[str, str]) -> Dict[str, Any]:
@@ -88,10 +138,10 @@ class StripeAdapter(PaymentAdapter):
             return {
                 'event_type': event.type,
                 'event_id': event.id,
-                'data': event.data,
+                'status': getattr(event.data.object, "status", None),
+                'amount': getattr(event.data.object, "amount_total", None),
+                'currency': getattr(event.data.object, "currency", None),
                 'raw': event
             }
         except Exception as e:
-            raise
-
-   
+            raise RuntimeError(f"Stripe webhook parsing failed: {e}") from e

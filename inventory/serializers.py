@@ -1,22 +1,16 @@
+from django.conf import settings
 from rest_framework import serializers
 from .models import Hotel, RoomType, Car, Flight
 from catalog.models import Destination
-from catalog.serializers import DestinationSerializer
 
 
 class RoomHotelSerializer(serializers.ModelSerializer):
-    """
-    Nested serializer for hotel details inside RoomType
-    """
     class Meta:
         model = Hotel
         fields = ("id", "name", "city", "country", "destination")
 
 
 class RoomTypeSerializer(serializers.ModelSerializer):
-    """
-    Serializer for RoomType including optional image upload
-    """
     image = serializers.ImageField(required=False, allow_null=True, write_only=True)
     image_url = serializers.SerializerMethodField(read_only=True)
     hotel_id = serializers.PrimaryKeyRelatedField(
@@ -24,7 +18,7 @@ class RoomTypeSerializer(serializers.ModelSerializer):
         source="hotel",
         write_only=True
     )
-    hotel = RoomHotelSerializer(read_only=True)  # nested hotel info
+    hotel = RoomHotelSerializer(read_only=True)
 
     class Meta:
         model = RoomType
@@ -38,9 +32,6 @@ class RoomTypeSerializer(serializers.ModelSerializer):
 
 
 class HotelSerializer(serializers.ModelSerializer):
-    """
-    Serializer for Hotel with optional destination and cover image
-    """
     destination = serializers.CharField(required=False, allow_blank=True)
     cover_image = serializers.ImageField(required=False, allow_null=True, write_only=True)
     cover_image_url = serializers.SerializerMethodField(read_only=True)
@@ -56,7 +47,6 @@ class HotelSerializer(serializers.ModelSerializer):
         )
 
     def create(self, validated_data):
-        # Default destination to city if not provided
         if not validated_data.get("destination"):
             validated_data["destination"] = validated_data.get("city", "Unknown")
         return super().create(validated_data)
@@ -67,13 +57,20 @@ class HotelSerializer(serializers.ModelSerializer):
         return super().update(instance, validated_data)
 
     def get_cover_image_url(self, obj):
-        return obj.cover_image.url if obj.cover_image else None
+        if not obj.cover_image:
+            return None
+        if str(obj.cover_image).startswith("http"):
+            return str(obj.cover_image)
+        request = self.context.get("request")
+        if request is not None:
+            return request.build_absolute_uri(obj.cover_image.url)
+
+        return obj.cover_image.url
+
 
 
 class CarSerializer(serializers.ModelSerializer):
-    """
-    Serializer for Car with optional image
-    """
+    available = serializers.BooleanField(default=True, required=False)
     carimage = serializers.ImageField(required=False, allow_null=True, write_only=True)
     image_url = serializers.SerializerMethodField(read_only=True)
     destination_id = serializers.PrimaryKeyRelatedField(
@@ -81,7 +78,7 @@ class CarSerializer(serializers.ModelSerializer):
         source="destination",
         write_only=True
     )
-    destination = DestinationSerializer(read_only=True)
+    destination = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Car
@@ -95,11 +92,16 @@ class CarSerializer(serializers.ModelSerializer):
     def get_image_url(self, obj):
         return obj.carimage.url if obj.carimage else None
 
+    def get_destination(self, obj):
+        from catalog.serializers import DestinationSerializer
+        return DestinationSerializer(obj.destination).data if obj.destination else None
+    def create(self, validated_data):
+        print("DEBUG - validated_data before save:", validated_data)
+        if "available" not in validated_data or validated_data["available"] is None:
+            validated_data["available"] = True
+        return super().create(validated_data)
 
 class DestinationCarsSerializer(serializers.ModelSerializer):
-    """
-    Serializer for Destination including its cars
-    """
     cars = CarSerializer(many=True, read_only=True)
 
     class Meta:
@@ -108,20 +110,36 @@ class DestinationCarsSerializer(serializers.ModelSerializer):
 
 
 class DestinationHotelsSerializer(serializers.ModelSerializer):
-    """
-    Serializer for Destination including its hotels
-    """
     hotels = HotelSerializer(many=True, read_only=True)
 
     class Meta:
         model = Destination
         fields = ("id", "name", "country", "hotels")
+
+
 class FlightSerializer(serializers.ModelSerializer):
+    expired = serializers.SerializerMethodField()
+
     class Meta:
         model = Flight
         fields = (
-            "id", "provider", "offer_id",
-            "origin", "destination",
-            "departure_time", "arrival_time",
-            "airline", "price", "currency", "seats_available"
+            "id",
+            "provider",
+            "offer_id",
+            "origin",
+            "destination",
+            "airline",
+            "departure_time",
+            "arrival_time",
+            "seats_available",
+            "departure_date",
+            "return_date",
+            "price",
+            "currency",
+            "expires_at",
+            "created_at",
+            "expired",
         )
+
+    def get_expired(self, obj):
+        return obj.is_expired()

@@ -37,10 +37,8 @@ class SendgridEmailAdapter(EmailAdapter):
                 subject=subject,
                 html_content=html
             )
-            # optional plain text
             if text:
                 message.add_content(Content("text/plain", text))
-            # headers not directly exposed in simple helper; set via message.personalizations if needed
             resp = self._client.send(message)
             return {"status": "QUEUED" if resp.status_code in (200,202) else "FAILED", "provider_id": getattr(resp, "headers", None), "raw": resp}
         except Exception as exc:

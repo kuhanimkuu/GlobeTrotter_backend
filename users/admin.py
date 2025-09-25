@@ -10,7 +10,6 @@ class UserAdmin(admin.ModelAdmin):
     readonly_fields = ("avatar_preview",)
 
     def avatar_preview(self, obj):
-        # Works for CloudinaryField or ImageField
         url = None
         if getattr(obj, "avatar", None):
             try:
