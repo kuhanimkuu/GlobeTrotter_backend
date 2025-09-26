@@ -47,6 +47,8 @@ def _calculate_duration_days(start_date: str, end_date: str) -> int:
         raise BookingError("End date must be after start date")
     return duration
 
+
+
 @transaction.atomic
 def create_generic_booking(
     user,
@@ -281,17 +283,27 @@ def create_car_booking(
     
     # Calculate duration and total price
     duration = _calculate_duration_days(start_date, end_date)
-    total_price = car.daily_rate * duration
-    
+    unit_price = car.daily_rate
+    total_price = unit_price * duration
+
+    # NOTE: pass the total_price as the unit_price and keep quantity=1
+    # This aligns with how create_hotel_booking does it and ensures create_generic_booking
+    # computes booking.total = total_price
     items = [{
         "type": "car",
         "id": car_id,
         "quantity": 1,
-        "unit_price": str(total_price),
+        "unit_price": str(total_price),   # <-- total price here (per booking)
         "start_date": start_date,
         "end_date": end_date,
     }]
-    
+    print("Car booking:", {
+    "daily_rate": car.daily_rate,
+    "duration": duration,
+    "total_price": total_price,
+    "unit_price_passed": str(total_price),
+})
+
     return create_generic_booking(user, items, currency or car.currency, note)
 
 @transaction.atomic

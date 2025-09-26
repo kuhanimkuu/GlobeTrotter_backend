@@ -23,5 +23,4 @@ urlpatterns = [
     # Admin-only user listing
     path("list/", UserListView.as_view(), name="user-list"),
     path("auth/logout/", LogoutView.as_view(), name="logout"),
-
 ]

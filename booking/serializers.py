@@ -8,6 +8,7 @@ from django.utils.translation import gettext_lazy as _
 from catalog.models import TourPackage  
 from django.contrib.auth import get_user_model
 from adapters.flights import ADAPTERS
+from . import services
 User = get_user_model()
 
 
@@ -228,6 +229,7 @@ class BookingCreateSerializer(serializers.Serializer):
                 detected_package = parsed["content_object"]
 
         from . import services
+        from inventory.models import Car
 
         if detected_package:
             booking = services.create_tour_package_booking(
@@ -239,17 +241,27 @@ class BookingCreateSerializer(serializers.Serializer):
                 note=note,
             )
         else:
-            generic_items = [
-                {
-                    "type": self._get_item_type(item["content_object"]),
-                    "id": item["content_object"].id,
+            generic_items = []
+
+            for item in parsed_items:
+                obj = item["content_object"]
+                unit_price = item["unit_price"]
+
+                # ✅ Special handling for cars
+                if isinstance(obj, Car):
+                    start = item["start_date"]
+                    end = item["end_date"]
+                    duration = (end - start).days
+                    unit_price = obj.daily_rate * duration
+
+                generic_items.append({
+                    "type": self._get_item_type(obj),
+                    "id": obj.id,
                     "start_date": item["start_date"],
                     "end_date": item["end_date"],
                     "quantity": item["quantity"],
-                    "unit_price": str(item["unit_price"]) if item["unit_price"] else None,
-                }
-                for item in parsed_items
-            ]
+                    "unit_price": str(unit_price),
+                })
 
             booking = services.create_generic_booking(
                 user=user, items=generic_items, currency=currency, note=note

@@ -17,6 +17,7 @@ from adapters.flights.duffel import DuffelAdapter
 from django.conf import settings
 from adapters.flights.fake import FakeFlightsAdapter
 from rest_framework.permissions import AllowAny
+from datetime import datetime, timedelta
 class HotelViewSet(viewsets.ModelViewSet):
     queryset = Hotel.objects.prefetch_related("room_types") 
     serializer_class = HotelSerializer

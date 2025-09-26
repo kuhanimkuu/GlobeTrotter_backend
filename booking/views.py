@@ -9,7 +9,10 @@ from datetime import datetime
 from adapters.maps import get_maps_adapter
 from adapters.flights import get_flight_adapter
 from adapters.maps import get_maps_adapter
+from datetime import datetime
+from decimal import Decimal
 from .models import Booking
+from .services import create_car_booking
 from .serializers import (
     BookingReadSerializer, 
     BookingCreateSerializer,

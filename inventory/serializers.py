@@ -76,7 +76,9 @@ class CarSerializer(serializers.ModelSerializer):
     destination_id = serializers.PrimaryKeyRelatedField(
         queryset=Destination.objects.all(),
         source="destination",
-        write_only=True
+        write_only=True,
+        required=False, 
+        allow_null=True
     )
     destination = serializers.SerializerMethodField(read_only=True)
 
