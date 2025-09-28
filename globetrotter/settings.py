@@ -74,7 +74,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-     "corsheaders.middleware.CorsMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
@@ -113,8 +113,6 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'globetrotter.wsgi.application'
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
-
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
