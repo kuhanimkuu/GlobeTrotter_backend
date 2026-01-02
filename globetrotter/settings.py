@@ -18,6 +18,7 @@ import cloudinary
 import cloudinary.uploader
 from cloudinary.utils import cloudinary_url
 from datetime import timedelta
+CORS_URLS_REGEX = r"^/api/.*$"
 
 load_dotenv()
 cloudinary.config( 
@@ -86,6 +87,7 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
+CORS_ALLOW_ALL_ORIGINS = True  # TEMP for debugging
 CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOW_HEADERS = [
